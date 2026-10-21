@@ -71,6 +71,11 @@ eq example-shared-default "$(data "$OUT" t-my-controlplane-2 20-provider.yaml | 
 eq example-dot-slash-dir "$(helm template t "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set manifestsDir=./examples/aws-s3/manifests 2>&1 | yq ea -N '[select(.kind == "ConfigMap")] | length')" 2
 expect_fail example-missing-value-names-cp "for control plane my-controlplane-1" "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set defaults.providerPackage=null
 
+# example: examples/azure-storage
+OUT=$(helm template t "$(chart)" -f "$ROOT/examples/azure-storage/values.yaml" 2>&1) || ko azure-example-render "$OUT"
+eq azure-example-keys "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ConfigMap" and .metadata.name == "t-my-controlplane-2") | .data | keys | join(",")')" "10-provider.yaml,20-cluster-prov-config.yaml"
+eq azure-example-providerconfig "$(data "$OUT" t-my-controlplane-1 20-cluster-prov-config.yaml | yq '.apiVersion + " " + .spec.credentials.secretRef.name')" "azure.m.upbound.io/v1beta1 azure-secret"
+
 # render-time failures
 C=$(chart basic)
 expect_fail fail-no-controlplanes "controlPlanes is empty" "$C" --set manifestsDir=m

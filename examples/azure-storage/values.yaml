@@ -1,0 +1,11 @@
+# Distributes the files in examples/azure-storage/manifests to two control
+# planes. Before installing, create the azure-secret Secret in each control
+# plane (see 20-cluster-prov-config.yaml).
+manifestsDir: examples/azure-storage/manifests
+
+defaults:
+  providerPackage: xpkg.upbound.io/upbound/provider-azure-storage:v2.8.3
+
+controlPlanes:
+  - name: my-controlplane-1
+  - name: my-controlplane-2

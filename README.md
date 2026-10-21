@@ -54,6 +54,8 @@ Rules for the files:
 
 `examples/aws-s3` installs a two-replica `DeploymentRuntimeConfig`, `provider-aws-s3` using it, an AWS `ClusterProviderConfig`, and a `ServiceAccount` with a different role ARN per control plane. It targets `my-controlplane-1` and `my-controlplane-2` in group `default`.
 
+`examples/azure-storage` does the same for Azure: `provider-azure-storage` and a `ClusterProviderConfig` that reads a service principal from `crossplane-system/azure-secret`, which you create in each control plane first. Use it with `-f examples/azure-storage/values.yaml`.
+
 ```bash
 helm template hydrate . -n default -f examples/aws-s3/values.yaml        # preview
 helm upgrade --install hydrate . -n default -f examples/aws-s3/values.yaml

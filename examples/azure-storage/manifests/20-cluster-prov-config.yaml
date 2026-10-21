@@ -1,0 +1,14 @@
+# Reads a service principal from crossplane-system/azure-secret, key creds, in
+# the JSON format of `az ad sp create-for-rbac --sdk-auth`. The Secret must
+# already exist in the control plane; the chart does not distribute credentials.
+apiVersion: azure.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: azure-provider
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: azure-secret
+      key: creds
