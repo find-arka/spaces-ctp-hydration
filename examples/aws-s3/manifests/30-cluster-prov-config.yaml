@@ -1,0 +1,13 @@
+# Reads credentials from crossplane-system/aws-secret, which must already exist
+# in the control plane. The chart does not distribute credentials.
+apiVersion: aws.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: aws-provider
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-secret
+      key: creds

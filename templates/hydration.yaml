@@ -9,7 +9,7 @@
 {{- end }}
 {{- end }}
 {{- if not $paths }}
-{{- fail (printf "no *.yaml or *.yml files in %s; put your manifests there or set manifestsDir=examples/aws-s3" .Values.manifestsDir) }}
+{{- fail (printf "no *.yaml or *.yml files in %s; put your manifests there, or try the example with -f examples/aws-s3/values.yaml" .Values.manifestsDir) }}
 {{- end }}
 {{- if not .Values.controlPlanes }}
 {{- fail "controlPlanes is empty; add one {name, values} entry per control plane" }}

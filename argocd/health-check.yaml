@@ -1,0 +1,25 @@
+# Borrowed from the Upbound engineering example; not yet tested in this repo.
+#
+# Merge into the argocd-cm ConfigMap so Argo CD reports a ResourceDistribution
+# as Healthy only once every selected control plane applied its manifests.
+data:
+  resource.customizations.health.spaces.upbound.io_ResourceDistribution: |
+    hs = {}
+    if obj.status ~= nil and obj.status.conditions ~= nil then
+      for _, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" then
+          if c.status == "True" then
+            hs.status = "Healthy"
+          elseif c.reason == "Creating" then
+            hs.status = "Progressing"
+          else
+            hs.status = "Degraded"
+          end
+          hs.message = c.message
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for the distribution to report"
+    return hs

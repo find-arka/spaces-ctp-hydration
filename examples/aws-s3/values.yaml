@@ -1,0 +1,15 @@
+# Distributes the files in examples/aws-s3/manifests to two control planes.
+# Each control plane gets its own role ARN; everything else comes from defaults.
+manifestsDir: examples/aws-s3/manifests
+
+defaults:
+  providerPackage: xpkg.upbound.io/upbound/provider-aws-s3:v2.7.0
+  providerReplicas: 2
+
+controlPlanes:
+  - name: my-controlplane-1
+    values:
+      roleArn: arn:aws:iam::111111111111:role/my-controlplane-1-providers
+  - name: my-controlplane-2
+    values:
+      roleArn: arn:aws:iam::111111111111:role/my-controlplane-2-providers

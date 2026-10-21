@@ -61,6 +61,13 @@ C=$(chart escape)
 OUT=$(helm template t "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m 2>&1)
 eq escape-literal-braces "$(data "$OUT" t-ctp-a 10-esc.yaml | yq '.data.template')" "{{ .observed.composite }}"
 
+# example: examples/aws-s3, two control planes with their own role ARN
+OUT=$(helm template t "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" 2>&1) || ko example-render "$OUT"
+eq example-keys "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ConfigMap" and .metadata.name == "t-my-controlplane-1") | .data | keys | join(",")')" "10-drc.yaml,20-provider.yaml,30-cluster-prov-config.yaml,40-serviceaccount.yaml"
+eq example-role-cp1 "$(data "$OUT" t-my-controlplane-1 40-serviceaccount.yaml | yq '.metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-1-providers"
+eq example-role-cp2 "$(data "$OUT" t-my-controlplane-2 40-serviceaccount.yaml | yq '.metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-2-providers"
+eq example-shared-default "$(data "$OUT" t-my-controlplane-2 20-provider.yaml | yq '.spec.package')" "xpkg.upbound.io/upbound/provider-aws-s3:v2.7.0"
+
 # render-time failures
 C=$(chart basic)
 expect_fail fail-no-controlplanes "controlPlanes is empty" "$C" --set manifestsDir=m
@@ -74,7 +81,7 @@ printf 'controlPlanes:\n  - name: ctp-a\n    values: {roleArn: r}\n  - name: ctp
 expect_fail fail-missing-value-names-cp "roleArn is required for control plane ctp-b" "$C" -f "$WORK/missing.yaml" --set manifestsDir=m
 head -c 300000 /dev/zero | tr '\0' 'x' | sed 's/^/# /' > "$C/m/50-big.yaml"
 expect_fail fail-size "maxManifestBytes" "$C" -f "$FIX/basic/values.yaml" --set manifestsDir=m
-expect_fail fail-empty-folder "set manifestsDir=examples/aws-s3" "$(chart empty)" -f "$FIX/single.values.yaml" --set manifestsDir=m
+expect_fail fail-empty-folder "-f examples/aws-s3/values.yaml" "$(chart empty)" -f "$FIX/single.values.yaml" --set manifestsDir=m
 expect_fail fail-default-folder-empty "no *.yaml or *.yml files in manifests" "$(chart)" -f "$FIX/single.values.yaml"
 expect_fail fail-bad-key "not a valid ConfigMap key" "$(chart badkey)" -f "$FIX/single.values.yaml" --set manifestsDir=m
 

@@ -1,0 +1,37 @@
+# Borrowed from the Upbound engineering example; not yet tested in this repo.
+#
+# Syncs the chart to the Space (the host cluster), not to each control plane.
+# The ResourceDistributions fan the manifests out from there. Point repoURL at
+# your own clone, and register the Space's host cluster in Argo CD as
+# "upbound-space".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spaces-ctp-hydration
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/find-arka/spaces-ctp-hydration.git
+    targetRevision: main
+    path: .
+    helm:
+      releaseName: hydrate
+      valueFiles:
+        - examples/aws-s3/values.yaml
+  destination:
+    name: upbound-space
+    namespace: default        # the Spaces group of the control planes
+  syncPolicy:
+    automated: {}
+    syncOptions:
+      # Client-side apply limits an object to 256 KiB; server-side apply lets
+      # a ConfigMap grow to 1 MiB (raise maxManifestBytes to match).
+      - ServerSideApply=true
+  # Spaces updates this annotation as control planes are provisioned; without
+  # this the app would show out of sync after every update.
+  ignoreDifferences:
+    - group: spaces.upbound.io
+      kind: ResourceDistribution
+      jsonPointers:
+        - /metadata/annotations/resourcedistributions.internal.spaces.upbound.io~1provisioned-total
