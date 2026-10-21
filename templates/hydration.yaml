@@ -1,0 +1,73 @@
+{{- /* Files to distribute: <manifestsDir>/*.{yaml,yml}, without dotfiles. Glob does not descend into subfolders. */ -}}
+{{- $paths := list }}
+{{- range $path, $_ := .Files.Glob (printf "%s/*.{yaml,yml}" (trimSuffix "/" .Values.manifestsDir)) }}
+{{- if not (hasPrefix "." (base $path)) }}
+{{- if not (regexMatch "^[-._a-zA-Z0-9]{1,253}$" (base $path)) }}
+{{- fail (printf "%s: %q is not a valid ConfigMap key; use letters, digits, '-', '_' and '.'" $path (base $path)) }}
+{{- end }}
+{{- $paths = append $paths $path }}
+{{- end }}
+{{- end }}
+{{- if not $paths }}
+{{- fail (printf "no *.yaml or *.yml files in %s; put your manifests there or set manifestsDir=examples/aws-s3" .Values.manifestsDir) }}
+{{- end }}
+{{- if not .Values.controlPlanes }}
+{{- fail "controlPlanes is empty; add one {name, values} entry per control plane" }}
+{{- end }}
+{{- $seen := dict }}
+{{- range $cp := .Values.controlPlanes }}
+{{- $cpName := required "every controlPlanes entry needs a name" $cp.name }}
+{{- if hasKey $seen $cpName }}
+{{- fail (printf "control plane %s is listed twice in controlPlanes" $cpName) }}
+{{- end }}
+{{- $_ := set $seen $cpName true }}
+{{- $name := printf "%s-%s" $.Release.Name $cpName }}
+{{- if gt (len $name) 63 }}
+{{- fail (printf "%s is longer than 63 characters; use a shorter release or control plane name" $name) }}
+{{- end }}
+{{- /* Each file is a template rendered with this control plane's values over the defaults. */ -}}
+{{- $values := mergeOverwrite (deepCopy ($.Values.defaults | default dict)) (deepCopy ($cp.values | default dict)) }}
+{{- $ctx := dict "Values" $values "ControlPlane" $cpName "Release" $.Release "Chart" $.Chart "Template" $.Template }}
+{{- $data := dict }}
+{{- $size := 0 }}
+{{- range $path := $paths }}
+{{- $rendered := tpl ($.Files.Get $path) $ctx }}
+{{- $size = add $size (len $rendered) }}
+{{- $_ := set $data (base $path) $rendered }}
+{{- end }}
+{{- if gt $size (int $.Values.maxManifestBytes) }}
+{{- fail (printf "manifests for control plane %s render to %d bytes, over maxManifestBytes (%d); see values.yaml" $cpName $size (int $.Values.maxManifestBytes)) }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    spaces-ctp-hydration/control-plane: {{ $cpName }}
+{{- /* toYaml keeps every byte, including CRLF and trailing spaces. */}}
+data:
+{{- toYaml $data | nindent 2 }}
+---
+apiVersion: spaces.upbound.io/v1alpha1
+kind: ResourceDistribution
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    spaces-ctp-hydration/control-plane: {{ $cpName }}
+spec:
+  controlPlaneSelector:
+    names:
+      - {{ $cpName }}
+  manifestRefs:
+    - kind: ConfigMap
+      name: {{ $name }}
+      {{- with $.Values.strategy }}
+      strategy: {{ . }}
+      {{- end }}
+  deletionPolicy: {{ $.Values.deletionPolicy }}
+{{- end }}

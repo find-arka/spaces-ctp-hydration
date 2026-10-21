@@ -1,0 +1,14 @@
+# Kept out of the chart, and out of the Helm release. Do not add manifests/ or
+# examples/: the chart reads its manifests from them.
+.git/
+.gitignore
+.github/
+.azuredevops/
+.superpowers/
+.vscode/
+.idea/
+.DS_Store
+*.md
+argocd/
+tests/
+*.tgz

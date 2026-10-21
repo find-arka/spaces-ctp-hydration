@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: esc
+  namespace: default
+data:
+  template: '{{ "{{" }} .observed.composite }}'

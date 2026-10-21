@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-identity
+  namespace: crossplane-system
+  annotations:
+    example.com/role-arn: {{ required (printf "roleArn is required for control plane %s" .ControlPlane) .Values.roleArn | quote }}

@@ -1,0 +1,29 @@
+# Folder, relative to the chart root, whose *.yaml and *.yml files are
+# distributed. Subfolders and files starting with "." are skipped. Each file is
+# a Helm template rendered once per control plane (see README).
+manifestsDir: manifests
+
+# Values shared by every control plane. Files read them as .Values.
+defaults: {}
+
+# One entry per control plane. Each gets its own ConfigMap and
+# ResourceDistribution named <release>-<name>, in the release namespace, which
+# must be the Spaces group of the control plane. values overrides defaults.
+controlPlanes: []
+#  - name: my-controlplane-1
+#    values:
+#      roleArn: arn:aws:iam::111111111111:role/my-controlplane-1
+
+# Orphan keeps the applied objects when a file or control plane is removed or
+# the chart is uninstalled. Delete removes them.
+deletionPolicy: Orphan
+
+# Empty means the server default, Reconcile: Spaces keeps the objects applied
+# and reverts drift. ApplyOnce creates them once and never updates them.
+strategy: ""
+
+# Render-time limit on the rendered manifests per control plane. 262144 (256
+# KiB) is the limit for client-side kubectl apply, which Argo CD uses by
+# default. Helm 4 applies server-side by default; with it, or with Argo CD
+# ServerSideApply=true, up to about 900000 fits in a ConfigMap (1 MiB).
+maxManifestBytes: 262144

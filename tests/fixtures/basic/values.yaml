@@ -1,0 +1,9 @@
+defaults:
+  note: "a: b # not a comment"
+controlPlanes:
+  - name: ctp-a
+    values:
+      roleArn: arn:aws:iam::111111111111:role/ctp-a
+  - name: ctp-b
+    values:
+      roleArn: arn:aws:iam::111111111111:role/ctp-b
