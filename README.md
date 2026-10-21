@@ -1,10 +1,10 @@
 # spaces-ctp-hydration
 
-A Helm chart that hydrates Upbound Spaces control planes: it installs the objects a control plane needs before any workload, such as `DeploymentRuntimeConfig`s, `Provider`s, provider configs and `ServiceAccount`s.
+A Helm chart that hydrates Upbound Spaces control planes with what they need before any workload: `DeploymentRuntimeConfig`s, `Provider`s, provider configs, `ServiceAccount`s and anything else you write as a manifest.
 
-You keep each object as a manifest file in a folder. For every control plane you list, the chart renders the folder with that control plane's values and creates a ConfigMap plus a `ResourceDistribution` in the Space. Spaces then applies the files inside that control plane and reports the result.
+Each manifest is a file in a folder. For every control plane you list, the chart renders the folder with that control plane's values into a ConfigMap and a `ResourceDistribution` in the Space, and Spaces applies the files inside that control plane.
 
-> Reference only. This repo shows one way to use the alpha `ResourceDistribution` API (`spaces.upbound.io/v1alpha1`). It was tested on a Spaces `1.19.0-rc.0.182.g1ace58e19` dev build. Clone it and adapt it. It is not maintained or supported.
+> Reference only, not maintained or supported. Clone it and adapt it. Tested with the alpha `ResourceDistribution` API (`spaces.upbound.io/v1alpha1`) on a Spaces `1.19.0-rc.0.182.g1ace58e19` dev build.
 
 ```
  manifests/ (your files)          Space (host cluster), namespace = Spaces group
@@ -16,29 +16,14 @@ You keep each object as a manifest file in a folder. For every control plane you
    controlPlanes: [ctp-a, ctp-b]    defaults + that control plane's values
 ```
 
-## Try the example
-
-`examples/aws-s3` installs a two-replica `DeploymentRuntimeConfig`, `provider-aws-s3` using it, an AWS `ClusterProviderConfig`, and a `ServiceAccount` with a per-control-plane role ARN. It targets two control planes, `my-controlplane-1` and `my-controlplane-2`, in group `default`.
-
-Run the chart against the Space (host cluster), in the namespace (group) of the control planes:
+## Use your own manifests
 
 ```bash
 git clone https://github.com/find-arka/spaces-ctp-hydration.git
 cd spaces-ctp-hydration
-helm template hydrate . -n default -f examples/aws-s3/values.yaml        # preview
-helm upgrade --install hydrate . -n default -f examples/aws-s3/values.yaml
 ```
 
-Verify:
-
-```bash
-kubectl -n default get rd -l app.kubernetes.io/instance=hydrate           # PROVISIONED 1/1 each
-kubectl -n default get rdb -l spaces.upbound.io/resource-distribution=hydrate-my-controlplane-1 -o yaml | yq '.items[].status'
-```
-
-## Use your own manifests
-
-1. Put your files in `manifests/`. Write them by hand, or generate them with any tool.
+1. Put your files in `manifests/`. Generate them with your automation pipeline.
 2. List your control planes and their values in a values file:
 
    ```yaml
@@ -50,56 +35,62 @@ kubectl -n default get rdb -l spaces.upbound.io/resource-distribution=hydrate-my
          roleArn: arn:aws:iam::111111111111:role/team-a
    ```
 
-3. `helm upgrade --install <release> . -n <group> -f <values file>`
+3. Run the chart against the Space (host cluster), in the namespace (group) of the control planes: `helm upgrade --install <release> . -n <group> -f <values file>`
 
-Each file is a Helm template. It sees:
-- `.Values`: the control plane's `values` merged over `defaults`
-- `.ControlPlane`: the control plane's name
-- `.Release` and `.Chart`
-
-Use `required` for values that must be set, and put `.ControlPlane` in the message so the error names the control plane:
+Each file is a Helm template. `.Values` holds the control plane's `values` merged over `defaults`, and `.ControlPlane` is its name. Put `.ControlPlane` in `required` messages so an error names the control plane:
 
 ```yaml
 eks.amazonaws.com/role-arn: {{ required (printf "roleArn is required for control plane %s" .ControlPlane) .Values.roleArn | quote }}
 ```
 
-### Rules
+Rules for the files:
 
-- **Files:** `*.yaml` and `*.yml` directly in the folder. Subfolders and files starting with `.` are skipped. A file may hold several documents separated by `---`.
-- **Order:** the file name is the ConfigMap key. Spaces applies keys in byte-wise lexicographic order, so use number prefixes of the same width (`10-`, `20-`, `30-`); `9-` sorts after `10-`. The order does not make a file wait for an earlier one to succeed. A manifest whose CRD does not exist yet is retried until it does.
-- **Templating:** a literal `{{` in a manifest, for example in a go-templating composition, must be written as `{{ "{{" }}`.
-- **Size:** the rendered files per control plane must fit in `maxManifestBytes`. The default is 256 KiB, the limit for client-side `kubectl apply`. Helm 4 applies server-side, and so does Argo CD with `ServerSideApply=true`. With either, you can raise it to about `900000`, since a ConfigMap holds 1 MiB.
-- **Credentials:** none. ConfigMaps are not secret. Create Secrets in the control plane another way, for example with Spaces Shared Secrets.
+- Only `*.yaml` and `*.yml` directly in the folder count. Subfolders and files starting with `.` are skipped. A file may hold several documents separated by `---`.
+- The file name sets the order. Spaces applies files in byte-wise lexicographic order, so use number prefixes of the same width (`10-`, `20-`); `9-` sorts after `10-`. A file does not wait for an earlier one to succeed. A manifest whose CRD doesn't exist yet is retried until it does.
+- Write a literal `{{`, for example in a go-templating composition, as `{{ "{{" }}`.
+- Don't put credentials in the files. ConfigMaps are not secret. Use Spaces Shared Secrets or create the Secret in the control plane.
+
+## Try the example
+
+`examples/aws-s3` installs a two-replica `DeploymentRuntimeConfig`, `provider-aws-s3` using it, an AWS `ClusterProviderConfig`, and a `ServiceAccount` with a different role ARN per control plane. It targets `my-controlplane-1` and `my-controlplane-2` in group `default`.
+
+```bash
+helm template hydrate . -n default -f examples/aws-s3/values.yaml        # preview
+helm upgrade --install hydrate . -n default -f examples/aws-s3/values.yaml
+kubectl -n default get rd -l app.kubernetes.io/instance=hydrate           # PROVISIONED 1/1 each
+kubectl -n default get rdb -l spaces.upbound.io/resource-distribution=hydrate-my-controlplane-1 -o yaml | yq '.items[].status'
+```
 
 ## Values
 
 | Key | Default | Meaning |
 |---|---|---|
-| `manifestsDir` | `manifests` | Folder, relative to the chart root, whose files are distributed. Helm can only read files inside the chart, so it must be inside this repo |
+| `manifestsDir` | `manifests` | Folder of files to distribute, relative to the chart root. Helm only reads files inside the chart |
 | `defaults` | `{}` | Values shared by every control plane |
-| `controlPlanes` | `[]` | `{name, values}` per control plane. Each gets a ConfigMap and a ResourceDistribution named `<release>-<name>` (at most 63 characters) |
-| `deletionPolicy` | `Orphan` | `Orphan` keeps applied objects when a file, a control plane entry or the release is removed. `Delete` removes them, except objects applied with `ApplyOnce`, which are never deleted |
-| `strategy` | `""` | Empty uses the server default, `Reconcile`: objects are kept applied and drift is reverted. `ApplyOnce` creates objects once and never updates them |
-| `maxManifestBytes` | `262144` | Render-time size limit per control plane |
+| `controlPlanes` | `[]` | `{name, values}` per control plane. Each gets a ConfigMap and a ResourceDistribution named `<release>-<name>`, at most 63 characters |
+| `deletionPolicy` | `Orphan` | `Orphan` keeps applied objects when a file, a control plane entry or the release is removed. `Delete` removes them, except `ApplyOnce` objects |
+| `strategy` | `""` | Empty means `Reconcile`: objects stay applied and drift is reverted. `ApplyOnce` creates objects once and never updates them |
+| `maxManifestBytes` | `262144` | Size limit per control plane. 256 KiB is the limit for client-side `kubectl apply`. With server-side apply (Helm 4 by default, or Argo CD with `ServerSideApply=true`) you can raise it to about `900000` |
 
-The chart fails at render time, with a message, on:
-- an empty folder or an empty `controlPlanes`
-- a missing or duplicate control plane name
-- a name over 63 characters
-- a file name that is not a valid ConfigMap key
+The chart stops with an error on:
+- an empty folder or `controlPlanes` list
+- a missing or duplicate name, or a name over 63 characters
+- a file name that isn't a valid ConfigMap key
 - a missing `required` value
 - output over `maxManifestBytes`
 
 ## Running it from a pipeline
 
-- **Argo CD:** `argocd/application.yaml` syncs the chart from git to the Space. `argocd/health-check.yaml` makes Argo CD report a ResourceDistribution as Healthy only once every control plane applied it. Both are borrowed from an Upbound engineering example and have **not been tested in this repo yet**. Argo CD renders the chart with `helm template`, so the manifest files must be committed.
-- **Azure DevOps or any CI:** generate the files into `manifests/`, then run `helm upgrade --install`.
+From Azure DevOps or any CI, generate the files into `manifests/` and run `helm upgrade --install`.
+
+For Argo CD, `argocd/application.yaml` syncs the chart from git to the Space, and `argocd/health-check.yaml` reports a ResourceDistribution as Healthy once every control plane applied it. Both are borrowed from an Upbound engineering example and **have not been tested in this repo yet**. Argo CD renders the chart from git, so commit the generated files.
 
 ## Things to know
 
-- `Ready` on a ResourceDistribution means the manifests were applied, not that the providers are healthy. Check inside the control plane.
-- A name in `controlPlanes` that matches no control plane, for example a typo, still shows `Ready` with `PROVISIONED 0/0` and the message `no control planes match the selector`. Check that every distribution shows `1/1`.
-- Template errors point at `templates/hydration.yaml`, not at your file. The error message, or the file content quoted in it, tells you which file failed. Write `required` messages that name the value and `.ControlPlane`, as the example does.
-- Removing a control plane from `controlPlanes` deletes its ConfigMap and ResourceDistribution. Its objects stay or go according to `deletionPolicy`.
-- An object can be managed by one distribution only. Don't target the same objects from two releases.
-- See the walkthrough and the behaviors observed during testing in the [ResourceDistribution gist](https://gist.github.com/find-arka/f9ef871d1c8ebcf14aba8f04071e928c).
+- `Ready` on a ResourceDistribution means the manifests were applied. Check provider health inside the control plane.
+- A name that matches no control plane, such as a typo, also shows `Ready`, with `PROVISIONED 0/0`. Check for `1/1`.
+- Template errors point at `templates/hydration.yaml`. The message, or the file content quoted in it, shows which file failed.
+- Removing a control plane from `controlPlanes` deletes its ConfigMap and ResourceDistribution. Its objects follow `deletionPolicy`.
+- An object can belong to one distribution only, so don't target the same objects from two releases.
+
+The [ResourceDistribution gist](https://gist.github.com/find-arka/f9ef871d1c8ebcf14aba8f04071e928c) has a full walkthrough and the behaviors observed in testing.
