@@ -68,6 +68,9 @@ eq example-role-cp1 "$(data "$OUT" t-my-controlplane-1 40-serviceaccount.yaml | 
 eq example-role-cp2 "$(data "$OUT" t-my-controlplane-2 40-serviceaccount.yaml | yq '.metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-2-providers"
 eq example-shared-default "$(data "$OUT" t-my-controlplane-2 20-provider.yaml | yq '.spec.package')" "xpkg.upbound.io/upbound/provider-aws-s3:v2.7.0"
 
+eq example-dot-slash-dir "$(helm template t "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set manifestsDir=./examples/aws-s3/manifests 2>&1 | yq ea -N '[select(.kind == "ConfigMap")] | length')" 2
+expect_fail example-missing-value-names-cp "for control plane my-controlplane-1" "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set defaults.providerPackage=null
+
 # render-time failures
 C=$(chart basic)
 expect_fail fail-no-controlplanes "controlPlanes is empty" "$C" --set manifestsDir=m

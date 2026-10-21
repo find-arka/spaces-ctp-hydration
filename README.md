@@ -78,7 +78,7 @@ eks.amazonaws.com/role-arn: {{ required (printf "roleArn is required for control
 | `manifestsDir` | `manifests` | Folder, relative to the chart root, whose files are distributed. Helm can only read files inside the chart, so it must be inside this repo |
 | `defaults` | `{}` | Values shared by every control plane |
 | `controlPlanes` | `[]` | `{name, values}` per control plane. Each gets a ConfigMap and a ResourceDistribution named `<release>-<name>` (at most 63 characters) |
-| `deletionPolicy` | `Orphan` | `Orphan` keeps applied objects when a file, a control plane entry or the release is removed. `Delete` removes them |
+| `deletionPolicy` | `Orphan` | `Orphan` keeps applied objects when a file, a control plane entry or the release is removed. `Delete` removes them, except objects applied with `ApplyOnce`, which are never deleted |
 | `strategy` | `""` | Empty uses the server default, `Reconcile`: objects are kept applied and drift is reverted. `ApplyOnce` creates objects once and never updates them |
 | `maxManifestBytes` | `262144` | Render-time size limit per control plane |
 
@@ -98,6 +98,8 @@ The chart fails at render time, with a message, on:
 ## Things to know
 
 - `Ready` on a ResourceDistribution means the manifests were applied, not that the providers are healthy. Check inside the control plane.
+- A name in `controlPlanes` that matches no control plane, for example a typo, still shows `Ready` with `PROVISIONED 0/0` and the message `no control planes match the selector`. Check that every distribution shows `1/1`.
+- Template errors point at `templates/hydration.yaml`, not at your file. The error message, or the file content quoted in it, tells you which file failed. Write `required` messages that name the value and `.ControlPlane`, as the example does.
 - Removing a control plane from `controlPlanes` deletes its ConfigMap and ResourceDistribution. Its objects stay or go according to `deletionPolicy`.
 - An object can be managed by one distribution only. Don't target the same objects from two releases.
 - See the walkthrough and the behaviors observed during testing in the [ResourceDistribution gist](https://gist.github.com/find-arka/f9ef871d1c8ebcf14aba8f04071e928c).

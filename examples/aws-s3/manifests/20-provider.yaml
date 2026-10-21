@@ -3,7 +3,7 @@ kind: Provider
 metadata:
   name: provider-aws-s3
 spec:
-  package: {{ required "providerPackage is required" .Values.providerPackage }}
+  package: {{ required (printf "providerPackage is required for control plane %s" .ControlPlane) .Values.providerPackage }}
   runtimeConfigRef:
     apiVersion: pkg.crossplane.io/v1beta1
     kind: DeploymentRuntimeConfig

@@ -1,6 +1,7 @@
 {{- /* Files to distribute: <manifestsDir>/*.{yaml,yml}, without dotfiles. Glob does not descend into subfolders. */ -}}
+{{- $dir := .Values.manifestsDir | trimPrefix "./" | trimSuffix "/" }}
 {{- $paths := list }}
-{{- range $path, $_ := .Files.Glob (printf "%s/*.{yaml,yml}" (trimSuffix "/" .Values.manifestsDir)) }}
+{{- range $path, $_ := .Files.Glob (printf "%s/*.{yaml,yml}" $dir) }}
 {{- if not (hasPrefix "." (base $path)) }}
 {{- if not (regexMatch "^[-._a-zA-Z0-9]{1,253}$" (base $path)) }}
 {{- fail (printf "%s: %q is not a valid ConfigMap key; use letters, digits, '-', '_' and '.'" $path (base $path)) }}
@@ -9,7 +10,7 @@
 {{- end }}
 {{- end }}
 {{- if not $paths }}
-{{- fail (printf "no *.yaml or *.yml files in %s; put your manifests there, or try the example with -f examples/aws-s3/values.yaml" .Values.manifestsDir) }}
+{{- fail (printf "no *.yaml or *.yml files in %s (manifestsDir is relative to the chart root and must be inside it); put your manifests there, or try the example with -f examples/aws-s3/values.yaml" .Values.manifestsDir) }}
 {{- end }}
 {{- if not .Values.controlPlanes }}
 {{- fail "controlPlanes is empty; add one {name, values} entry per control plane" }}

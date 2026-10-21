@@ -2,6 +2,8 @@
 #
 # Merge into the argocd-cm ConfigMap so Argo CD reports a ResourceDistribution
 # as Healthy only once every selected control plane applied its manifests.
+# A distribution whose selector matches no control plane is also Ready (0/0),
+# so this check reports it Healthy.
 data:
   resource.customizations.health.spaces.upbound.io_ResourceDistribution: |
     hs = {}
