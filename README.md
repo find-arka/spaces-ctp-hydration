@@ -56,6 +56,8 @@ Rules for the files:
 
 `examples/azure-storage` does the same for Azure: `provider-azure-storage` and a `ClusterProviderConfig` that reads a service principal from `crossplane-system/azure-secret`, which you create in each control plane first. Use it with `-f examples/azure-storage/values.yaml`.
 
+The examples template a few fields (`providerPackage`, `providerReplicas`, `roleArn`) to show the pattern. They don't expose every `DeploymentRuntimeConfig` or provider field, and the chart has no per-kind values. Write whatever your control planes need into the manifest files, as plain YAML or with your own values.
+
 ```bash
 helm template hydrate . -n default -f examples/aws-s3/values.yaml        # preview
 helm upgrade --install hydrate . -n default -f examples/aws-s3/values.yaml
