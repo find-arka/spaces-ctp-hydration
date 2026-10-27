@@ -29,7 +29,7 @@
 {{- /* Files in file-name order, documents in file order. Empty and comment-only documents are skipped. */ -}}
 {{- $manifests := list }}
 {{- range $path := $paths }}
-{{- range $i, $raw := regexSplit "(?m)^---[ \t\r]*$" (tpl ($.Files.Get $path) $ctx) -1 }}
+{{- range $i, $raw := regexSplit "(?m)^---(?:[ \t].*)?\r?$" (tpl ($.Files.Get $path) $ctx) -1 }}
 {{- $doc := fromYaml $raw }}
 {{- if hasKey $doc "Error" }}
 {{- fail (printf "%s (control plane %s), document %d: %s" $path $cpName (add1 $i) $doc.Error) }}
@@ -52,24 +52,22 @@
 {{- with $.Values.strategy }}
 {{- $_ := set $source "strategy" . }}
 {{- end }}
-{{- $sources := toYaml (list $source) }}
-{{- if gt (len $sources) (int $.Values.maxManifestBytes) }}
-{{- fail (printf "manifests for control plane %s render to %d bytes, over maxManifestBytes (%d); see values.yaml" $cpName (len $sources) (int $.Values.maxManifestBytes)) }}
+{{- $rd := dict
+  "apiVersion" "spaces.upbound.io/v1alpha1"
+  "kind" "ResourceDistribution"
+  "metadata" (dict
+    "name" $name
+    "namespace" $.Release.Namespace
+    "labels" (dict "app.kubernetes.io/instance" $.Release.Name "spaces-ctp-hydration/control-plane" $cpName))
+  "spec" (dict
+    "controlPlaneSelector" (dict "names" (list $cpName))
+    "deletionPolicy" $.Values.deletionPolicy
+    "sources" (list $source)) }}
+{{- /* Client-side apply stores the whole object as JSON in an annotation, so measure the object. */ -}}
+{{- $size := len (toJson $rd) }}
+{{- if gt $size (int $.Values.maxManifestBytes) }}
+{{- fail (printf "the ResourceDistribution for control plane %s is %d bytes as JSON, over maxManifestBytes (%d); see values.yaml" $cpName $size (int $.Values.maxManifestBytes)) }}
 {{- end }}
 ---
-apiVersion: spaces.upbound.io/v1alpha1
-kind: ResourceDistribution
-metadata:
-  name: {{ $name }}
-  namespace: {{ $.Release.Namespace }}
-  labels:
-    app.kubernetes.io/instance: {{ $.Release.Name }}
-    spaces-ctp-hydration/control-plane: {{ $cpName }}
-spec:
-  controlPlaneSelector:
-    names:
-      - {{ $cpName }}
-  deletionPolicy: {{ $.Values.deletionPolicy }}
-  sources:
-{{- $sources | nindent 4 }}
+{{ toYaml $rd }}
 {{- end }}

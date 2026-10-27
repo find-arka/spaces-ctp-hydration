@@ -22,7 +22,7 @@ deletionPolicy: Orphan
 # and reverts drift. ApplyOnce creates them once and never updates them.
 strategy: ""
 
-# Render-time limit on the rendered manifests per control plane. 262144 (256
+# Render-time limit on each ResourceDistribution, measured as JSON. 262144 (256
 # KiB) is the limit for client-side kubectl apply, which Argo CD uses by
 # default. Helm 4 applies server-side by default; with it, or with Argo CD
 # ServerSideApply=true, the limit is etcd's object size (about 1.5 MiB).

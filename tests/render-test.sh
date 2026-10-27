@@ -53,6 +53,9 @@ eq crlf-parsed "$(mf "$OUT" t-ctp-a | jq -r '.[0].kind + "/" + .[0].metadata.nam
 C=$(chart multidoc)
 OUT=$(helm template t "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m 2>&1)
 eq multidoc-order "$(mf "$OUT" t-ctp-a | jq -r 'map(.metadata.name) | join(",")')" "three,one,two"
+C=$(chart separators)
+OUT=$(helm template t "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m 2>&1)
+eq separators-with-comment-or-tag "$(mf "$OUT" t-ctp-a | jq -r 'map(.metadata.name) | join(",")')" "a,b,c"
 
 # an escaped {{ renders a literal {{
 C=$(chart escape)
@@ -88,6 +91,11 @@ printf 'controlPlanes:\n  - name: ctp-a\n    values: {roleArn: r}\n  - name: ctp
 expect_fail fail-missing-value-names-cp "roleArn is required for control plane ctp-b" "$C" -f "$WORK/missing.yaml" --set manifestsDir=m
 printf 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: big}\ndata: {x: %s}\n' "$(head -c 300000 /dev/zero | tr '\0' 'x')" > "$C/m/50-big.yaml"
 expect_fail fail-size "maxManifestBytes" "$C" -f "$FIX/basic/values.yaml" --set manifestsDir=m
+# Client-side apply stores the whole object as JSON in an annotation, so the
+# guard must count the object, not only the manifests.
+C=$(chart); mkdir "$C/m"
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: big}\ndata: {x: %s}\n' "$(head -c 261980 /dev/zero | tr '\0' 'x')" > "$C/m/10-big.yaml"
+expect_fail fail-size-whole-object "maxManifestBytes" "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m
 expect_fail fail-empty-folder "-f examples/aws-s3/values.yaml" "$(chart empty)" -f "$FIX/single.values.yaml" --set manifestsDir=m
 expect_fail fail-default-folder-empty "no *.yaml or *.yml files in manifests" "$(chart)" -f "$FIX/single.values.yaml"
 expect_fail fail-no-name "10-noname.yaml (control plane ctp-a), document 2: every manifest needs apiVersion, kind and metadata.name" "$(chart noname)" -f "$FIX/single.values.yaml" --set manifestsDir=m

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: a, namespace: default}
+--- # a comment after the separator
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: b, namespace: default}
+--- !!map
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: c, namespace: default}
+...

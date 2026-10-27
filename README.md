@@ -47,7 +47,7 @@ Rules for the files:
 
 - Only `*.yaml` and `*.yml` directly in the folder count. Subfolders and files starting with `.` are skipped. A file may hold several documents separated by `---`. Each document needs `apiVersion`, `kind` and `metadata.name`, and the chart fails on one without them.
 - The file name sets the order. The chart lists the documents in byte-wise file-name order, then in order within each file, and Spaces applies them in that order. Use number prefixes of the same width (`10-`, `20-`); `9-` sorts after `10-`. A manifest does not wait for an earlier one to succeed. A manifest whose CRD doesn't exist yet is retried until it does.
-- The chart parses each document and writes it back as YAML, so comments and formatting are not kept.
+- The chart parses each document and writes it back as YAML, so comments and formatting are not kept. If a key appears twice in a document, the last value wins without an error. Quote integers longer than 15 digits; unquoted, they lose precision.
 - Write a literal `{{`, for example in a go-templating composition, as `{{ "{{" }}`.
 - Don't put credentials in the files. The manifests are stored in plain text in the ResourceDistribution. Use Spaces Shared Secrets or create the Secret in the control plane.
 
@@ -75,7 +75,7 @@ kubectl -n default get rdb -l spaces.upbound.io/resource-distribution=hydrate-my
 | `controlPlanes` | `[]` | `{name, values}` per control plane. Each gets a ResourceDistribution named `<release>-<name>`, at most 63 characters |
 | `deletionPolicy` | `Orphan` | `Orphan` keeps applied objects when a file, a control plane entry or the release is removed. `Delete` removes them, except `ApplyOnce` objects |
 | `strategy` | `""` | Empty means `Reconcile`: objects stay applied and drift is reverted. `ApplyOnce` creates objects once and never updates them |
-| `maxManifestBytes` | `262144` | Size limit for the rendered manifests per control plane. 256 KiB is the limit for client-side `kubectl apply`, which Argo CD uses by default. With server-side apply (Helm 4 by default, or Argo CD with `ServerSideApply=true`) the limit is etcd's object size, about 1.5 MiB |
+| `maxManifestBytes` | `262144` | Size limit per control plane, measured on the whole ResourceDistribution as JSON. 256 KiB is the limit for client-side `kubectl apply`, which Argo CD uses by default. With server-side apply (Helm 4 by default, or Argo CD with `ServerSideApply=true`) the limit is etcd's object size, about 1.5 MiB |
 
 The chart stops with an error on:
 - an empty folder or `controlPlanes` list
@@ -83,7 +83,7 @@ The chart stops with an error on:
 - a document that isn't valid YAML or lacks `apiVersion`, `kind` or `metadata.name`, naming the file and document
 - files with no manifests, or more than 100 manifests (one source's limit)
 - a missing `required` value
-- output over `maxManifestBytes`
+- a ResourceDistribution over `maxManifestBytes`
 
 ## Running it from a pipeline
 
