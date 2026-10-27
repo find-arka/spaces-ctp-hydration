@@ -2,17 +2,17 @@
 
 A Helm chart that hydrates Upbound Spaces control planes with what they need before any workload: `DeploymentRuntimeConfig`s, `Provider`s, provider configs, `ServiceAccount`s and anything else you write as a manifest.
 
-Each manifest is a file in a folder. For every control plane you list, the chart renders the folder with that control plane's values into a ConfigMap and a `ResourceDistribution` in the Space, and Spaces applies the files inside that control plane.
+Each manifest is a file in a folder. For every control plane you list, the chart renders the folder with that control plane's values into one `ResourceDistribution` in the Space, with the manifests inline, and Spaces applies them inside that control plane.
 
-> Reference only, not maintained or supported. Clone it and adapt it. Tested with the alpha `ResourceDistribution` API (`spaces.upbound.io/v1alpha1`) on a Spaces `1.19.0-rc.0.182.g1ace58e19` dev build.
+> Reference only, not maintained or supported. Clone it and adapt it. Tested with the alpha `ResourceDistribution` API (`spaces.upbound.io/v1alpha1`) on a Spaces `1.19.0-rc.0.217.gdf4dfaa02` dev build. Earlier builds took the manifests from a ConfigMap; this chart no longer renders one.
 
 ```
  manifests/ (your files)          Space (host cluster), namespace = Spaces group
-   10-drc.yaml                    ┌──────────────────────────────────────────────────┐
-   20-provider.yaml  helm upgrade │ ConfigMap + ResourceDistribution  <release>-ctp-a │──► ctp-a
-   40-sa.yaml        ──────────►  │ ConfigMap + ResourceDistribution  <release>-ctp-b │──► ctp-b
- values.yaml           --install  └──────────────────────────────────────────────────┘
-   defaults: {...}                  each ConfigMap = the folder rendered with
+   10-drc.yaml                    ┌──────────────────────────────────────┐
+   20-provider.yaml  helm upgrade │ ResourceDistribution  <release>-ctp-a │──► ctp-a
+   40-sa.yaml        ──────────►  │ ResourceDistribution  <release>-ctp-b │──► ctp-b
+ values.yaml           --install  └──────────────────────────────────────┘
+   defaults: {...}                  each one holds the folder rendered with
    controlPlanes: [ctp-a, ctp-b]    defaults + that control plane's values
 ```
 
@@ -45,10 +45,11 @@ eks.amazonaws.com/role-arn: {{ required (printf "roleArn is required for control
 
 Rules for the files:
 
-- Only `*.yaml` and `*.yml` directly in the folder count. Subfolders and files starting with `.` are skipped. A file may hold several documents separated by `---`.
-- The file name sets the order. Spaces applies files in byte-wise lexicographic order, so use number prefixes of the same width (`10-`, `20-`); `9-` sorts after `10-`. A file does not wait for an earlier one to succeed. A manifest whose CRD doesn't exist yet is retried until it does.
+- Only `*.yaml` and `*.yml` directly in the folder count. Subfolders and files starting with `.` are skipped. A file may hold several documents separated by `---`. Each document needs `apiVersion`, `kind` and `metadata.name`, and the chart fails on one without them.
+- The file name sets the order. The chart lists the documents in byte-wise file-name order, then in order within each file, and Spaces applies them in that order. Use number prefixes of the same width (`10-`, `20-`); `9-` sorts after `10-`. A manifest does not wait for an earlier one to succeed. A manifest whose CRD doesn't exist yet is retried until it does.
+- The chart parses each document and writes it back as YAML, so comments and formatting are not kept.
 - Write a literal `{{`, for example in a go-templating composition, as `{{ "{{" }}`.
-- Don't put credentials in the files. ConfigMaps are not secret. Use Spaces Shared Secrets or create the Secret in the control plane.
+- Don't put credentials in the files. The manifests are stored in plain text in the ResourceDistribution. Use Spaces Shared Secrets or create the Secret in the control plane.
 
 ## Try the example
 
@@ -71,15 +72,16 @@ kubectl -n default get rdb -l spaces.upbound.io/resource-distribution=hydrate-my
 |---|---|---|
 | `manifestsDir` | `manifests` | Folder of files to distribute, relative to the chart root. Helm only reads files inside the chart |
 | `defaults` | `{}` | Values shared by every control plane |
-| `controlPlanes` | `[]` | `{name, values}` per control plane. Each gets a ConfigMap and a ResourceDistribution named `<release>-<name>`, at most 63 characters |
+| `controlPlanes` | `[]` | `{name, values}` per control plane. Each gets a ResourceDistribution named `<release>-<name>`, at most 63 characters |
 | `deletionPolicy` | `Orphan` | `Orphan` keeps applied objects when a file, a control plane entry or the release is removed. `Delete` removes them, except `ApplyOnce` objects |
 | `strategy` | `""` | Empty means `Reconcile`: objects stay applied and drift is reverted. `ApplyOnce` creates objects once and never updates them |
-| `maxManifestBytes` | `262144` | Size limit per control plane. 256 KiB is the limit for client-side `kubectl apply`. With server-side apply (Helm 4 by default, or Argo CD with `ServerSideApply=true`) you can raise it to about `900000` |
+| `maxManifestBytes` | `262144` | Size limit for the rendered manifests per control plane. 256 KiB is the limit for client-side `kubectl apply`, which Argo CD uses by default. With server-side apply (Helm 4 by default, or Argo CD with `ServerSideApply=true`) the limit is etcd's object size, about 1.5 MiB |
 
 The chart stops with an error on:
 - an empty folder or `controlPlanes` list
 - a missing or duplicate name, or a name over 63 characters
-- a file name that isn't a valid ConfigMap key
+- a document that isn't valid YAML or lacks `apiVersion`, `kind` or `metadata.name`, naming the file and document
+- files with no manifests, or more than 100 manifests (one source's limit)
 - a missing `required` value
 - output over `maxManifestBytes`
 
@@ -94,7 +96,7 @@ For Argo CD, `argocd/application.yaml` syncs the chart from git to the Space, an
 - `Ready` on a ResourceDistribution means the manifests were applied. Check provider health inside the control plane.
 - A name that matches no control plane, such as a typo, also shows `Ready`, with `PROVISIONED 0/0`. Check for `1/1`.
 - Template errors point at `templates/hydration.yaml`. The message, or the file content quoted in it, shows which file failed.
-- Removing a control plane from `controlPlanes` deletes its ConfigMap and ResourceDistribution. Its objects follow `deletionPolicy`.
+- Removing a control plane from `controlPlanes` deletes its ResourceDistribution. Its objects follow `deletionPolicy`.
 - An object can belong to one distribution only, so don't target the same objects from two releases.
 
 The [ResourceDistribution gist](https://gist.github.com/find-arka/f9ef871d1c8ebcf14aba8f04071e928c) has a full walkthrough and the behaviors observed in testing.

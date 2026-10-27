@@ -6,8 +6,8 @@ manifestsDir: manifests
 # Values shared by every control plane. Files read them as .Values.
 defaults: {}
 
-# One entry per control plane. Each gets its own ConfigMap and
-# ResourceDistribution named <release>-<name>, in the release namespace, which
+# One entry per control plane. Each gets its own ResourceDistribution named
+# <release>-<name>, in the release namespace, which
 # must be the Spaces group of the control plane. values overrides defaults.
 controlPlanes: []
 #  - name: my-controlplane-1
@@ -25,5 +25,5 @@ strategy: ""
 # Render-time limit on the rendered manifests per control plane. 262144 (256
 # KiB) is the limit for client-side kubectl apply, which Argo CD uses by
 # default. Helm 4 applies server-side by default; with it, or with Argo CD
-# ServerSideApply=true, up to about 900000 fits in a ConfigMap (1 MiB).
+# ServerSideApply=true, the limit is etcd's object size (about 1.5 MiB).
 maxManifestBytes: 262144

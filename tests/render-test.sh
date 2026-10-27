@@ -20,8 +20,8 @@ chart() {
 ok() { echo "PASS $1"; pass=$((pass + 1)); }
 ko() { echo "FAIL $1: $2"; fail=$((fail + 1)); }
 eq() { if [ "$2" == "$3" ]; then ok "$1"; else ko "$1" "got [$2], want [$3]"; fi; }
-# The data value of key $3 in ConfigMap $2, exactly, from rendered output $1.
-data() { printf '%s' "$1" | yq ea -N -o json "select(.kind == \"ConfigMap\" and .metadata.name == \"$2\")" | jq -j --arg k "$3" '.data[$k]'; }
+# The inline manifests of ResourceDistribution $2, as JSON, from rendered output $1.
+mf() { printf '%s' "$1" | yq ea -N -o json "select(.metadata.name == \"$2\") | .spec.sources[0].inline.manifests"; }
 expect_fail() { # name, expected message substring, helm template args...
   local name=$1 want=$2; shift 2
   local out
@@ -32,49 +32,48 @@ expect_fail() { # name, expected message substring, helm template args...
 # basic: two control planes, templated values, skipped files
 C=$(chart basic)
 OUT=$(helm template t "$C" -n grp -f "$FIX/basic/values.yaml" --set manifestsDir=m 2>&1) || ko basic-render "$OUT"
-eq basic-configmaps "$(printf '%s' "$OUT" | yq ea -N '[select(.kind == "ConfigMap")] | length')" 2
-eq basic-rd-names "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ResourceDistribution") | .metadata.name' | paste -sd, -)" "t-ctp-a,t-ctp-b"
-eq basic-selector "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ResourceDistribution" and .metadata.name == "t-ctp-b") | .spec.controlPlaneSelector.names[0]')" ctp-b
-eq basic-manifestref "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ResourceDistribution" and .metadata.name == "t-ctp-a") | .spec.manifestRefs[0].name')" t-ctp-a
+eq basic-only-rds "$(printf '%s' "$OUT" | yq ea -N '.kind' | sort -u)" ResourceDistribution
+eq basic-rd-names "$(printf '%s' "$OUT" | yq ea -N '.metadata.name' | paste -sd, -)" "t-ctp-a,t-ctp-b"
+eq basic-selector "$(printf '%s' "$OUT" | yq ea -N 'select(.metadata.name == "t-ctp-b") | .spec.controlPlaneSelector.names[0]')" ctp-b
+eq basic-source-type "$(printf '%s' "$OUT" | yq ea -N '.spec.sources[0].type' | sort -u)" Inline
 eq basic-namespace "$(printf '%s' "$OUT" | yq ea -N '.metadata.namespace' | sort -u | paste -sd, -)" grp
-eq basic-keys-skip-dotfile-subdir-md "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ConfigMap" and .metadata.name == "t-ctp-a") | .data | keys | join(",")')" "10-cm.yaml,20-sa.yaml"
-eq basic-per-cp-value "$(data "$OUT" t-ctp-b 20-sa.yaml | yq '.metadata.annotations["example.com/role-arn"]')" "arn:aws:iam::111111111111:role/ctp-b"
-eq basic-controlplane-var "$(data "$OUT" t-ctp-a 10-cm.yaml | yq '.data.controlPlane')" ctp-a
-eq basic-special-chars "$(data "$OUT" t-ctp-a 10-cm.yaml | yq '.data.note')" "a: b # not a comment"
-eq basic-strategy-default-absent "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ResourceDistribution") | .spec.manifestRefs[0].strategy' | sort -u)" null
-eq basic-deletion-default "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ResourceDistribution") | .spec.deletionPolicy' | sort -u)" Orphan
+eq basic-skip-dotfile-subdir-md "$(mf "$OUT" t-ctp-a | jq -r 'map(.metadata.name) | join(",")')" "hello,provider-identity"
+eq basic-per-cp-value "$(mf "$OUT" t-ctp-b | jq -r '.[1].metadata.annotations["example.com/role-arn"]')" "arn:aws:iam::111111111111:role/ctp-b"
+eq basic-controlplane-var "$(mf "$OUT" t-ctp-a | jq -r '.[0].data.controlPlane')" ctp-a
+eq basic-special-chars "$(mf "$OUT" t-ctp-a | jq -r '.[0].data.note')" "a: b # not a comment"
+eq basic-strategy-default-absent "$(printf '%s' "$OUT" | yq ea -N '.spec.sources[0].strategy' | sort -u)" null
+eq basic-deletion-default "$(printf '%s' "$OUT" | yq ea -N '.spec.deletionPolicy' | sort -u)" Orphan
 OUT=$(helm template t "$C" -f "$FIX/basic/values.yaml" --set manifestsDir=m --set strategy=ApplyOnce 2>&1)
-eq applyonce "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ResourceDistribution") | .spec.manifestRefs[0].strategy' | sort -u)" ApplyOnce
+eq applyonce "$(printf '%s' "$OUT" | yq ea -N '.spec.sources[0].strategy' | sort -u)" ApplyOnce
 
-# exact bytes: CRLF and trailing spaces, multi-document files
+# parsing: CRLF and trailing spaces, several documents per file, file-name order
 C=$(chart crlf)
 OUT=$(helm template t "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m 2>&1)
-data "$OUT" t-ctp-a 10-crlf.yaml > "$WORK/crlf.out"
-if cmp -s "$WORK/crlf.out" "$FIX/crlf/manifests/10-crlf.yaml"; then ok crlf-byte-exact; else ko crlf-byte-exact "bytes differ"; fi
+eq crlf-parsed "$(mf "$OUT" t-ctp-a | jq -r '.[0].kind + "/" + .[0].metadata.name')" "ConfigMap/crlf"
 C=$(chart multidoc)
 OUT=$(helm template t "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m 2>&1)
-data "$OUT" t-ctp-a 10-multi.yaml > "$WORK/multi.out"
-if cmp -s "$WORK/multi.out" "$FIX/multidoc/manifests/10-multi.yaml"; then ok multidoc-byte-exact; else ko multidoc-byte-exact "bytes differ"; fi
+eq multidoc-order "$(mf "$OUT" t-ctp-a | jq -r 'map(.metadata.name) | join(",")')" "three,one,two"
 
 # an escaped {{ renders a literal {{
 C=$(chart escape)
 OUT=$(helm template t "$C" -f "$FIX/single.values.yaml" --set manifestsDir=m 2>&1)
-eq escape-literal-braces "$(data "$OUT" t-ctp-a 10-esc.yaml | yq '.data.template')" "{{ .observed.composite }}"
+eq escape-literal-braces "$(mf "$OUT" t-ctp-a | jq -r '.[0].data.template')" "{{ .observed.composite }}"
 
 # example: examples/aws-s3, two control planes with their own role ARN
 OUT=$(helm template t "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" 2>&1) || ko example-render "$OUT"
-eq example-keys "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ConfigMap" and .metadata.name == "t-my-controlplane-1") | .data | keys | join(",")')" "10-drc.yaml,20-provider.yaml,30-cluster-prov-config.yaml,40-serviceaccount.yaml"
-eq example-role-cp1 "$(data "$OUT" t-my-controlplane-1 40-serviceaccount.yaml | yq '.metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-1-providers"
-eq example-role-cp2 "$(data "$OUT" t-my-controlplane-2 40-serviceaccount.yaml | yq '.metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-2-providers"
-eq example-shared-default "$(data "$OUT" t-my-controlplane-2 20-provider.yaml | yq '.spec.package')" "xpkg.upbound.io/upbound/provider-aws-s3:v2.7.0"
+eq example-kinds "$(mf "$OUT" t-my-controlplane-1 | jq -r 'map(.kind) | join(",")')" "DeploymentRuntimeConfig,Provider,ClusterProviderConfig,ServiceAccount"
+eq example-role-cp1 "$(mf "$OUT" t-my-controlplane-1 | jq -r '.[3].metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-1-providers"
+eq example-role-cp2 "$(mf "$OUT" t-my-controlplane-2 | jq -r '.[3].metadata.annotations["eks.amazonaws.com/role-arn"]')" "arn:aws:iam::111111111111:role/my-controlplane-2-providers"
+eq example-shared-default "$(mf "$OUT" t-my-controlplane-2 | jq -r '.[1].spec.package')" "xpkg.upbound.io/upbound/provider-aws-s3:v2.7.0"
+eq example-int-kept "$(mf "$OUT" t-my-controlplane-1 | jq -r '.[0].spec.deploymentTemplate.spec.replicas | type')" number
 
-eq example-dot-slash-dir "$(helm template t "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set manifestsDir=./examples/aws-s3/manifests 2>&1 | yq ea -N '[select(.kind == "ConfigMap")] | length')" 2
+eq example-dot-slash-dir "$(helm template t "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set manifestsDir=./examples/aws-s3/manifests 2>&1 | yq ea -N '[select(.kind == "ResourceDistribution")] | length')" 2
 expect_fail example-missing-value-names-cp "for control plane my-controlplane-1" "$(chart)" -f "$ROOT/examples/aws-s3/values.yaml" --set defaults.providerPackage=null
 
 # example: examples/azure-storage
 OUT=$(helm template t "$(chart)" -f "$ROOT/examples/azure-storage/values.yaml" 2>&1) || ko azure-example-render "$OUT"
-eq azure-example-keys "$(printf '%s' "$OUT" | yq ea -N 'select(.kind == "ConfigMap" and .metadata.name == "t-my-controlplane-2") | .data | keys | join(",")')" "10-provider.yaml,20-cluster-prov-config.yaml"
-eq azure-example-providerconfig "$(data "$OUT" t-my-controlplane-1 20-cluster-prov-config.yaml | yq '.apiVersion + " " + .spec.credentials.secretRef.name')" "azure.m.upbound.io/v1beta1 azure-secret"
+eq azure-example-kinds "$(mf "$OUT" t-my-controlplane-2 | jq -r 'map(.kind) | join(",")')" "Provider,ClusterProviderConfig"
+eq azure-example-providerconfig "$(mf "$OUT" t-my-controlplane-1 | jq -r '.[1].apiVersion + " " + .[1].spec.credentials.secretRef.name')" "azure.m.upbound.io/v1beta1 azure-secret"
 
 # render-time failures
 C=$(chart basic)
@@ -87,11 +86,16 @@ printf 'controlPlanes:\n  - name: %s\n' "$(printf 'a%.0s' $(seq 1 62))" > "$WORK
 expect_fail fail-name-too-long "longer than 63" "$C" -f "$WORK/long.yaml" --set manifestsDir=m --set defaults.roleArn=r
 printf 'controlPlanes:\n  - name: ctp-a\n    values: {roleArn: r}\n  - name: ctp-b\n' > "$WORK/missing.yaml"
 expect_fail fail-missing-value-names-cp "roleArn is required for control plane ctp-b" "$C" -f "$WORK/missing.yaml" --set manifestsDir=m
-head -c 300000 /dev/zero | tr '\0' 'x' | sed 's/^/# /' > "$C/m/50-big.yaml"
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: big}\ndata: {x: %s}\n' "$(head -c 300000 /dev/zero | tr '\0' 'x')" > "$C/m/50-big.yaml"
 expect_fail fail-size "maxManifestBytes" "$C" -f "$FIX/basic/values.yaml" --set manifestsDir=m
 expect_fail fail-empty-folder "-f examples/aws-s3/values.yaml" "$(chart empty)" -f "$FIX/single.values.yaml" --set manifestsDir=m
 expect_fail fail-default-folder-empty "no *.yaml or *.yml files in manifests" "$(chart)" -f "$FIX/single.values.yaml"
-expect_fail fail-bad-key "not a valid ConfigMap key" "$(chart badkey)" -f "$FIX/single.values.yaml" --set manifestsDir=m
+expect_fail fail-no-name "10-noname.yaml (control plane ctp-a), document 2: every manifest needs apiVersion, kind and metadata.name" "$(chart noname)" -f "$FIX/single.values.yaml" --set manifestsDir=m
+expect_fail fail-bad-yaml "10-bad.yaml (control plane ctp-a), document 1" "$(chart badyaml)" -f "$FIX/single.values.yaml" --set manifestsDir=m
+expect_fail fail-comments-only "hold no manifests for control plane ctp-a" "$(chart comments)" -f "$FIX/single.values.yaml" --set manifestsDir=m
+C=$(chart basic)
+for i in $(seq 1 101); do printf -- '---\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: c%d}\n' "$i"; done > "$C/m/30-many.yaml"
+expect_fail fail-over-100 "at most 100" "$C" -f "$FIX/basic/values.yaml" --set manifestsDir=m
 
 echo "---- $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

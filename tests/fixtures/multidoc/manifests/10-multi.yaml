@@ -1,3 +1,6 @@
+---
+# leading separator and a comment-only document
+---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: one, namespace: default}

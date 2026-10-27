@@ -26,7 +26,7 @@ spec:
     automated: {}
     syncOptions:
       # Client-side apply limits an object to 256 KiB; server-side apply lets
-      # a ConfigMap grow to 1 MiB (raise maxManifestBytes to match).
+      # a ResourceDistribution grow to etcd's limit (raise maxManifestBytes to match).
       - ServerSideApply=true
   # Spaces updates this annotation as control planes are provisioned; without
   # this the app would show out of sync after every update.
