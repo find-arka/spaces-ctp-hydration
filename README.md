@@ -4,7 +4,7 @@ A Helm chart that hydrates Upbound Spaces control planes with what they need bef
 
 Each manifest is a file in a folder. For every control plane you list, the chart renders the folder with that control plane's values into one `ResourceDistribution` in the Space, with the manifests inline, and Spaces applies them inside that control plane.
 
-> Reference only, not maintained or supported. Clone it and adapt it. Tested with the alpha `ResourceDistribution` API (`spaces.upbound.io/v1alpha1`) on a Spaces `1.19.0-rc.0.217.gdf4dfaa02` dev build. Earlier builds took the manifests from a ConfigMap; this chart no longer renders one.
+> Reference only, not maintained or supported. Clone it and adapt it. Tested with the alpha `ResourceDistribution` API (`spaces.upbound.io/v1alpha1`) on a Spaces `1.19.0-rc.0.217.gdf4dfaa02` dev build.
 
 ```
  manifests/ (your files)          Space (host cluster), namespace = Spaces group

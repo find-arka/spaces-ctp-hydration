@@ -1,5 +1,5 @@
 apiVersion: v2
 name: spaces-ctp-hydration
-description: Renders a folder of manifest templates into one ConfigMap and one ResourceDistribution per Upbound Spaces control plane.
+description: Renders a folder of manifest templates into one ResourceDistribution per Upbound Spaces control plane.
 type: application
 version: 0.1.0
